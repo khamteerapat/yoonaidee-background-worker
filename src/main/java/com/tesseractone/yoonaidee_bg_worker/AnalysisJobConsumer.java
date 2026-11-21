@@ -140,6 +140,7 @@ public class AnalysisJobConsumer {
         data.add("sources", sourceUrls);
         JsonArray limitations = new JsonArray();
         limitations.add("Web research is not a verified rent or commute measurement.");
+        limitations.add("Neighborhood fit may include labeled qualitative assumptions when direct evidence is missing.");
         limitations.add("Scores, rent and travel times are unavailable without verified data.");
         data.add("dataLimitations", limitations);
         JsonObject preview = new JsonObject();
@@ -224,14 +225,18 @@ public class AnalysisJobConsumer {
             JsonObject zone = recommendations.get(i).getAsJsonObject();
             contents.add(flexText((i + 1) + ". " + zone.get("zoneName").getAsString(), true));
             contents.add(flexText(zone.get("reasoning").getAsString(), false));
-            contents.add(flexText("ข้อควรพิจารณา: " + zone.getAsJsonArray("cons").get(0).getAsString(), false));
-            JsonObject source = flexText("ดูแหล่งข้อมูล", false);
-            JsonObject action = new JsonObject();
-            action.addProperty("type", "uri");
-            action.addProperty("label", "ดูแหล่งข้อมูล");
-            action.addProperty("uri", zone.getAsJsonArray("sources").get(0).getAsString());
-            source.add("action", action);
-            contents.add(source);
+            if (!zone.getAsJsonArray("cons").isEmpty()) {
+                contents.add(flexText("ข้อควรพิจารณา: " + zone.getAsJsonArray("cons").get(0).getAsString(), false));
+            }
+            if (!zone.getAsJsonArray("sources").isEmpty()) {
+                JsonObject source = flexText("ดูแหล่งข้อมูล", false);
+                JsonObject action = new JsonObject();
+                action.addProperty("type", "uri");
+                action.addProperty("label", "ดูแหล่งข้อมูล");
+                action.addProperty("uri", zone.getAsJsonArray("sources").get(0).getAsString());
+                source.add("action", action);
+                contents.add(source);
+            }
         }
         contents.add(flexText("คะแนน ค่าเช่า และเวลาเดินทางยังไม่ได้ยืนยัน", false));
         body.add("contents", contents);
