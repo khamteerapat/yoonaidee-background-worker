@@ -1,36 +1,24 @@
-# Yoo Nai Dee ANALYSIS queue consumer
+# Yoo Nai Dee ANALYSIS worker
 
-Java 21 / Spring Boot worker sharing the PostgreSQL database with the LINE application. This phase implements queue ownership only. It has no research handler, HTTP API, result persistence, or LINE sender.
+Java 21 / Spring Boot worker. It polls PostgreSQL for ANALYSIS jobs, asks an OpenAI agent to research Bangkok neighborhoods with OpenAI web search, executes the agent's `saveAnalysisResult` tool call against PostgreSQL, and queues a LINE Flex push. The notification poller sends the push after the database transaction commits. The analysis path does not call Nominatim, routing, rental, or other data providers.
 
-## Run
+## Database setup
 
-For the existing dev database, apply `docs/migrations/20261121_analysis_waiting_for_handler.sql` once before starting the worker. For a fresh database, run `docs/yoo_nai_dee_init.sql` and then this migration. Set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the environment, then run `mvnw.cmd spring-boot:run` on Windows or `./mvnw spring-boot:run` elsewhere. The worker does not create or migrate tables. Keep database credentials outside source control. Set `worker.poll-delay-ms` as a Spring property to change the default one-second poll interval.
+For an existing database, apply these migrations in order:
 
-To build and run the worker in Docker from this directory:
+1. `docs/migrations/20261121_analysis_waiting_for_handler.sql`
+2. `docs/migrations/20261121_analysis_acknowledged.sql`
+3. `docs/migrations/20261121_demo_analysis_completion.sql`
 
-```sh
-docker build -t yoonaidee-background-worker .
-docker run --rm --env SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/app --env SPRING_DATASOURCE_USERNAME=app --env SPRING_DATASOURCE_PASSWORD=app yoonaidee-background-worker
-```
+For a fresh database, run `docs/yoo_nai_dee_init.sql` first, then the three migrations. The completion migration also requeues parked ANALYSIS jobs. Apply it once before starting the worker.
 
-Replace the example database connection values with your local settings. On Linux, use a database host reachable from the container. The worker needs no published port.
+Set `JDBC_DATABASE_URL`, `PGUSER`, `PGPASSWORD`, `OPENAI_API_KEY`, and `LINE_CHANNEL_ACCESS_TOKEN` in the environment. `OPENAI_MODEL` defaults to `gpt-4.1-mini`; it must support Responses API web search and function calling. Run `mvnw.cmd spring-boot:run` on Windows or `./mvnw spring-boot:run` elsewhere. The worker does not migrate tables automatically. `worker.poll-delay-ms` defaults to 1000.
 
-## Current behavior
+## Flow
 
-- Claims one due `ANALYSIS` job per poll from `QUEUED` or retryable `FAILED`, using a short transaction and `FOR UPDATE SKIP LOCKED`. `CONVERSATION` jobs are excluded from all queries.
-- A claim sets `PROCESSING`, assigns a unique process identity and a 60-second lease, and increments `attempts`. The transaction commits before the next action.
-- Because research is not implemented, the consumer parks the job in `WAITING_FOR_HANDLER`, clears the lease and worker identity, and restores the previous attempt count. The `input_snapshot` and `profile_version` are not changed. Parked jobs are not claimed again.
-- An expired `ANALYSIS` lease is recovered under a row lock into `FAILED`. A failed park uses the same failure state if this worker still owns a live lease. Retries use `run_after` with `min(300, 5 * 2^(attempts-1))` seconds; `FAILED` at `max_attempts` is terminal. If the database is unavailable, lease expiry provides eventual recovery after connectivity returns. No database transaction stays open during processing.
-- This phase never creates `analysis_results` or `notification_outbox` rows, changes `conversation_sessions`, marks jobs `COMPLETED`, or invents recommendations.
+1. Claim one due ANALYSIS job with `FOR UPDATE SKIP LOCKED`, a lease, and bounded retries.
+2. Validate its saved profile snapshot. The agent uses OpenAI web search to find three neighborhoods, then calls `saveAnalysisResult` with explanations, trade-offs, and cited URLs.
+3. Validate the tool arguments and require each URL to match a web search citation. In one database transaction, resolve or create inactive zone IDs, insert `analysis_results`, complete the job, and enqueue an `ANALYSIS_COMPLETED` notification only for the current profile version. Stale jobs retain their result without notifying the user.
+4. Push a LINE Flex with the three names, reasons, and caveats. The sender uses the outbox UUID as `X-Line-Retry-Key` and retries failed pushes without rerunning research. Terminal job failures queue one `ANALYSIS_FAILED` text notification.
 
-## Enable research later
-
-Replace the park step with the real research handler and lease renewal before releasing parked jobs. Then run:
-
-```sql
-UPDATE analysis_jobs
-SET status = 'QUEUED', run_after = now(), updated_at = now()
-WHERE job_type = 'ANALYSIS' AND status = 'WAITING_FOR_HANDLER';
-```
-
-This preserves each job's snapshot, profile version, and attempt budget. Apply the incremental migration to existing databases before starting this consumer; do not rerun the initialization script as a migration.
+The result leaves scores, rent estimates, and commute times null because web search alone does not verify them. Sources are stored with each recommendation. The Flex has no LIFF link because the result page and authorized result API are not implemented yet.

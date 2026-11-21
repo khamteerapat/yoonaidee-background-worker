@@ -8,3 +8,4 @@ build
 *.iml
 *.env
 application-local.properties
+app.properties
