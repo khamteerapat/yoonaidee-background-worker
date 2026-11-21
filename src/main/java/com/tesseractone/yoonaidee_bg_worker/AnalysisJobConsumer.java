@@ -173,12 +173,19 @@ public class AnalysisJobConsumer {
             """, (rs, row) -> rs.getBoolean("current_profile"), job.id(), job.claimToken());
         if (owned.isEmpty()) return 0;
         Result result = buildResult(snapshot, researched);
+        JsonObject savedSnapshot = snapshot.deepCopy();
+        JsonArray sourceUrls = new JsonArray();
+        for (var recommendation : result.data().getAsJsonArray("recommendations")) {
+            JsonArray sources = recommendation.getAsJsonObject().getAsJsonArray("sources");
+            if (!sources.isEmpty()) sourceUrls.add(sources.get(0).deepCopy());
+        }
+        savedSnapshot.add("sourceUrls", sourceUrls);
         UUID resultId = jdbc.queryForObject("""
             INSERT INTO analysis_results (job_id, profile_snapshot, result_schema_version,
                                           scoring_version, result_data, line_preview)
             VALUES (?, ?::jsonb, 1, 'web-research-unscored-v1', ?::jsonb, ?::jsonb)
             RETURNING id
-            """, UUID.class, job.id(), snapshot.toString(), result.data().toString(), result.preview().toString());
+            """, UUID.class, job.id(), savedSnapshot.toString(), result.data().toString(), result.preview().toString());
         jdbc.update("""
             UPDATE analysis_jobs SET status = 'COMPLETED', progress = 100,
                 progress_detail = jsonb_set(progress_detail, '{demo}', 'false'::jsonb, true),
