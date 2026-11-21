@@ -21,6 +21,7 @@ public class AnalysisJobConsumer {
     private static final Logger log = LoggerFactory.getLogger(AnalysisJobConsumer.class);
     private static final String WORKER_ID = UUID.randomUUID().toString();
     private static final String RETRY_DELAY = "make_interval(secs => LEAST(300, (5 * power(2, LEAST(attempts - 1, 6)))::int))";
+    private static final String LIFF_URL = "https://miniapp.line.me/2012621103-OpONnNqR";
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
     private final OpenAiZoneResearchAgent agent;
@@ -214,33 +215,80 @@ public class AnalysisJobConsumer {
         flex.addProperty("altText", "ผลค้นหาย่านที่น่าสนใจ: " + String.join(", ", result.names()));
         JsonObject bubble = new JsonObject();
         bubble.addProperty("type", "bubble");
+        bubble.addProperty("size", "mega");
+
+        JsonObject header = flexBox("horizontal", "sm");
+        JsonArray headerContents = new JsonArray();
+        JsonObject brand = flexText("Yoo Nai Dee", true);
+        brand.addProperty("flex", 1);
+        headerContents.add(brand);
+        JsonObject status = flexText("COMPLETED", false);
+        status.addProperty("size", "xs");
+        status.addProperty("color", "#06C755");
+        status.addProperty("align", "end");
+        status.addProperty("flex", 0);
+        headerContents.add(status);
+        header.add("contents", headerContents);
+        bubble.add("header", header);
+
         JsonObject body = new JsonObject();
         body.addProperty("type", "box");
         body.addProperty("layout", "vertical");
         body.addProperty("spacing", "md");
         JsonArray contents = new JsonArray();
-        contents.add(flexText("ผลค้นหาย่านที่น่าสนใจ", true));
+        JsonObject title = flexText("ผลค้นหาย่านที่น่าสนใจ 🎉", true);
+        title.addProperty("size", "lg");
+        contents.add(title);
+        JsonObject description = flexText("พบ 3 ย่านที่น่าสนใจสำหรับคุณ", false);
+        description.addProperty("color", "#6B7280");
+        contents.add(description);
         JsonArray recommendations = result.data().getAsJsonArray("recommendations");
         for (int i = 0; i < recommendations.size(); i++) {
             JsonObject zone = recommendations.get(i).getAsJsonObject();
-            contents.add(flexText((i + 1) + ". " + zone.get("zoneName").getAsString(), true));
-            contents.add(flexText(zone.get("reasoning").getAsString(), false));
+            JsonObject card = flexBox("vertical", "sm");
+            card.addProperty("backgroundColor", "#F3F4F6");
+            card.addProperty("cornerRadius", "md");
+            card.addProperty("paddingAll", "md");
+            JsonArray cardContents = new JsonArray();
+            cardContents.add(flexText((i + 1) + ". " + zone.get("zoneName").getAsString(), true));
+            cardContents.add(flexText(zone.get("reasoning").getAsString(), false));
             if (!zone.getAsJsonArray("cons").isEmpty()) {
-                contents.add(flexText("ข้อควรพิจารณา: " + zone.getAsJsonArray("cons").get(0).getAsString(), false));
+                cardContents.add(flexText("ข้อควรพิจารณา: " + zone.getAsJsonArray("cons").get(0).getAsString(), false));
             }
             if (!zone.getAsJsonArray("sources").isEmpty()) {
                 JsonObject source = flexText("ดูแหล่งข้อมูล", false);
+                source.addProperty("color", "#059669");
                 JsonObject action = new JsonObject();
                 action.addProperty("type", "uri");
                 action.addProperty("label", "ดูแหล่งข้อมูล");
                 action.addProperty("uri", zone.getAsJsonArray("sources").get(0).getAsString());
                 source.add("action", action);
-                contents.add(source);
+                cardContents.add(source);
             }
+            card.add("contents", cardContents);
+            contents.add(card);
         }
-        contents.add(flexText("คะแนน ค่าเช่า และเวลาเดินทางยังไม่ได้ยืนยัน", false));
+        JsonObject caveat = flexText("คะแนน ค่าเช่า และเวลาเดินทางยังไม่ได้ยืนยัน", false);
+        caveat.addProperty("size", "xxs");
+        caveat.addProperty("color", "#9CA3AF");
+        contents.add(caveat);
         body.add("contents", contents);
         bubble.add("body", body);
+
+        JsonObject footer = flexBox("vertical", "sm");
+        JsonObject button = new JsonObject();
+        button.addProperty("type", "button");
+        button.addProperty("style", "primary");
+        button.addProperty("color", "#06C755");
+        JsonObject buttonAction = new JsonObject();
+        buttonAction.addProperty("type", "uri");
+        buttonAction.addProperty("label", "ดูข้อมูล");
+        buttonAction.addProperty("uri", LIFF_URL);
+        button.add("action", buttonAction);
+        JsonArray footerContents = new JsonArray();
+        footerContents.add(button);
+        footer.add("contents", footerContents);
+        bubble.add("footer", footer);
         flex.add("contents", bubble);
         messages.add(flex);
         payload.add("messages", messages);
@@ -255,6 +303,14 @@ public class AnalysisJobConsumer {
         item.addProperty("size", heading ? "md" : "sm");
         if (heading) item.addProperty("weight", "bold");
         return item;
+    }
+
+    private JsonObject flexBox(String layout, String spacing) {
+        JsonObject box = new JsonObject();
+        box.addProperty("type", "box");
+        box.addProperty("layout", layout);
+        box.addProperty("spacing", spacing);
+        return box;
     }
 
     private void recoverExpiredLease() {
