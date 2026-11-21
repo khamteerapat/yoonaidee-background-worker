@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: yoo-nai-dee-worker
+  main:
+    web-application-type: none
+  datasource:
+    url: ${JDBC_DATABASE_URL:jdbc:postgresql://localhost:5432/yoonaidee}
+    username: ${PGUSER:postgres}
+    password: ${PGPASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 5
+  flyway:
+    enabled: ${DB_MIGRATE:false}
+  ai:
+    model:
+      chat: ${AI_CHAT_PROVIDER:none}
+    openai:
+      api-key: ${OPENAI_API_KEY:unset}
+      chat:
+        options:
+          model: ${OPENAI_MODEL:gpt-5-mini}
+management:
+  endpoints:
+    enabled-by-default: false
+logging:
+  level:
+    com.yoonaidee: INFO
+worker:
+  enabled: ${WORKER_ENABLED:true}
+  poll-ms: ${WORKER_POLL_MS:3000}
+  lease-seconds: ${WORKER_LEASE_SECONDS:300}
+  max-batch: 1
+  identifier: ${HOSTNAME:local-worker}
+line:
+  channel-access-token: ${LINE_CHANNEL_ACCESS_TOKEN:}
+  liff-base-url: ${LIFF_BASE_URL:}
+research:
+  enabled: ${RESEARCH_ENABLED:false}
+  openrouteservice-api-key: ${ORS_API_KEY:}
+  rental-api-url: ${RENTAL_API_URL:}
+  rental-api-key: ${RENTAL_API_KEY:}
