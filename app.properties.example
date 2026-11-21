@@ -1,0 +1,4 @@
+# Copy to app.properties in this directory. Keep the real file out of git.
+openai.api-key=
+openai.model=gpt-4.1-mini
+line.channel-access-token=
