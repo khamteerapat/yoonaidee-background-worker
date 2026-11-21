@@ -19,7 +19,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class AnalysisJobConsumer {
     private static final Logger log = LoggerFactory.getLogger(AnalysisJobConsumer.class);
-    private static final String WORKER_ID = UUID.randomUUID().toString();
     private static final String RETRY_DELAY = "make_interval(secs => LEAST(300, (5 * power(2, LEAST(attempts - 1, 6)))::int))";
     private static final String LIFF_URL = "https://miniapp.line.me/2012621103-OpONnNqR";
     private final JdbcTemplate jdbc;
@@ -33,9 +32,11 @@ public class AnalysisJobConsumer {
         this.agent = agent;
     }
 
-    private record Job(UUID id, String snapshot) {}
+    private record Job(UUID id, String snapshot, String claimToken) {}
     private record Result(JsonObject data, JsonObject preview, List<String> names) {}
 
+    @Scheduled(fixedDelayString = "${worker.poll-delay-ms:1000}")
+    @Scheduled(fixedDelayString = "${worker.poll-delay-ms:1000}")
     @Scheduled(fixedDelayString = "${worker.poll-delay-ms:1000}")
     public void poll() {
         try {
@@ -59,7 +60,7 @@ public class AnalysisJobConsumer {
                     && error.getStackTrace()[0].getClassName().equals(OpenAiZoneResearchAgent.class.getName())
                     ? error.getMessage() : error.getClass().getSimpleName();
                 log.warn("ANALYSIS job {} failed at {}: {}", job.id(), stage, detail);
-                failOwnedJob(job.id());
+                failOwnedJob(job);
             }
         } catch (DataAccessException error) {
             log.warn("Analysis queue poll failed: {}", error.getClass().getSimpleName());
@@ -67,6 +68,7 @@ public class AnalysisJobConsumer {
     }
 
     private Job claim() {
+        String claimToken = UUID.randomUUID().toString();
         List<Job> jobs = jdbc.query("""
             WITH candidate AS (
                 SELECT id FROM analysis_jobs
@@ -79,7 +81,7 @@ public class AnalysisJobConsumer {
                 locked_by = ?, lease_until = now() + interval '240 seconds', updated_at = now()
             FROM candidate WHERE j.id = candidate.id
             RETURNING j.id, j.input_snapshot::text
-            """, (rs, row) -> new Job(rs.getObject("id", UUID.class), rs.getString("input_snapshot")), WORKER_ID);
+            """, (rs, row) -> new Job(rs.getObject("id", UUID.class), rs.getString("input_snapshot"), claimToken), claimToken);
         return jobs.isEmpty() ? null : jobs.get(0);
     }
 
@@ -168,7 +170,7 @@ public class AnalysisJobConsumer {
             WHERE j.id = ? AND j.job_type = 'ANALYSIS' AND j.status = 'PROCESSING'
               AND j.locked_by = ? AND j.lease_until > now()
             FOR UPDATE OF j, s
-            """, (rs, row) -> rs.getBoolean("current_profile"), job.id(), WORKER_ID);
+            """, (rs, row) -> rs.getBoolean("current_profile"), job.id(), job.claimToken());
         if (owned.isEmpty()) return 0;
         Result result = buildResult(snapshot, researched);
         UUID resultId = jdbc.queryForObject("""
@@ -329,7 +331,7 @@ public class AnalysisJobConsumer {
             """.formatted(RETRY_DELAY)));
     }
 
-    private void failOwnedJob(UUID jobId) {
+    private void failOwnedJob(Job job) {
         try {
             jdbc.update("""
                 UPDATE analysis_jobs
@@ -338,9 +340,9 @@ public class AnalysisJobConsumer {
                      last_error = 'Research analysis failed', updated_at = now()
                 WHERE id = ? AND job_type = 'ANALYSIS' AND status = 'PROCESSING'
                   AND locked_by = ? AND lease_until > now()
-                """.formatted(RETRY_DELAY), jobId, WORKER_ID);
+                """.formatted(RETRY_DELAY), job.id(), job.claimToken());
         } catch (DataAccessException error) {
-            log.warn("Could not record failure for analysis job {}: {}", jobId, error.getClass().getSimpleName());
+            log.warn("Could not record failure for analysis job {}: {}", job.id(), error.getClass().getSimpleName());
         }
     }
 

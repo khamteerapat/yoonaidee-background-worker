@@ -14,6 +14,8 @@ For a fresh database, run `docs/yoo_nai_dee_init.sql` first, then the three migr
 
 Set `JDBC_DATABASE_URL`, `PGUSER`, `PGPASSWORD`, `OPENAI_API_KEY`, and `LINE_CHANNEL_ACCESS_TOKEN` in the environment. `OPENAI_MODEL` defaults to `gpt-4.1-mini`; it must support Responses API web search and function calling. Run `mvnw.cmd spring-boot:run` on Windows or `./mvnw spring-boot:run` elsewhere. The worker does not migrate tables automatically. `worker.poll-delay-ms` defaults to 1000.
 
+Each worker instance polls up to three ANALYSIS jobs concurrently. The scheduler has four threads so the LINE notification poller can run while all three analysis slots are busy. Each claim gets a unique `locked_by` token; completion and failure updates require that token and an unexpired lease. Claiming and completion use separate short database transactions, so OpenAI requests do not hold row locks. A job whose research exceeds the 240-second lease may be retried; an expired attempt cannot save its result.
+
 ## Flow
 
 1. Claim one due ANALYSIS job with `FOR UPDATE SKIP LOCKED`, a lease, and bounded retries.
