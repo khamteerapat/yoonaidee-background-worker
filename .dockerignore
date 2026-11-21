@@ -1,0 +1,10 @@
+.git
+.agents
+.mvn
+target
+build
+.idea
+.vscode
+*.iml
+*.env
+application-local.properties

@@ -6,6 +6,15 @@ Java 21 / Spring Boot worker sharing the PostgreSQL database with the LINE appli
 
 For the existing dev database, apply `docs/migrations/20261121_analysis_waiting_for_handler.sql` once before starting the worker. For a fresh database, run `docs/yoo_nai_dee_init.sql` and then this migration. Set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the environment, then run `mvnw.cmd spring-boot:run` on Windows or `./mvnw spring-boot:run` elsewhere. The worker does not create or migrate tables. Keep database credentials outside source control. Set `worker.poll-delay-ms` as a Spring property to change the default one-second poll interval.
 
+To build and run the worker in Docker from this directory:
+
+```sh
+docker build -t yoonaidee-background-worker .
+docker run --rm --env SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/app --env SPRING_DATASOURCE_USERNAME=app --env SPRING_DATASOURCE_PASSWORD=app yoonaidee-background-worker
+```
+
+Replace the example database connection values with your local settings. On Linux, use a database host reachable from the container. The worker needs no published port.
+
 ## Current behavior
 
 - Claims one due `ANALYSIS` job per poll from `QUEUED` or retryable `FAILED`, using a short transaction and `FOR UPDATE SKIP LOCKED`. `CONVERSATION` jobs are excluded from all queries.
