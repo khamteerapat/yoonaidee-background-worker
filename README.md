@@ -8,7 +8,6 @@ A **headless, standalone Java 21 background worker** for the Yoo Nai Dee hackath
 - Spring Boot **4.2.0**
 - Spring AI **2.1.0** (OpenAI starter and tool-calling foundations)
 - Spring JDBC + HikariCP + PostgreSQL (SQL queue claiming, no JPA)
-- Flyway (optional database initialization)
 - Spring RestClient (external HTTP calls), Validation, Actuator libs, JUnit
 
 ## What is implemented
@@ -17,7 +16,6 @@ A **headless, standalone Java 21 background worker** for the Yoo Nai Dee hackath
 - Attempt limits, exponential retry delay, worker leases, job phase/progress update
 - A separate LINE notification outbox poller, claim/retry, and LINE Push via REST
 - Stable deterministic weighted scoring utility with JUnit tests
-- Database migration describing the **10 agreed tables**, including outbox
 - Intentional fail-closed research pipeline: **does not claim ANALYSIS jobs** until `RESEARCH_ENABLED=true`; once enabled, unfinished research steps raise explicit errors rather than fabricate results
 - Container-ready Dockerfile, Compose sample, Railway deployment notes
 
@@ -36,7 +34,7 @@ The project is a **starter**, not an already functioning Research Agent. It does
 ## Run locally
 
 ```bash
-# Option 1: Docker Compose (on a NEW, empty local database)
+# Option 1: Docker Compose (database schema must already exist)
 docker compose up --build
 
 # Option 2: Maven + an existing PostgreSQL database
@@ -45,7 +43,7 @@ mvn test
 mvn spring-boot:run
 ```
 
-**IMPORTANT:** Maven does not load `.env` automatically. Export the variables or configure your IDE. `DB_MIGRATE=false` by default. Set it `true` only on a fresh database or when Flyway is selected as the single migration owner. **Do not run this V1 migration blindly over tables already created by Next.js/Drizzle**. If database already exists, reconcile the existing schema first and keep one migration owner.
+**IMPORTANT:** Maven does not load `.env` automatically. Export the variables or configure your IDE. The worker does not create or migrate tables. Provision the shared PostgreSQL schema before starting it, including `analysis_jobs` and `notification_outbox`; an empty Compose database is not sufficient.
 
 `AI_CHAT_PROVIDER=none` prevents Spring AI OpenAI auto-configuration from requiring credentials at boot. Once research is implemented, supply an OpenAI key and change to `openai` (verify Spring AI 2.1 setting for the chosen model).
 
